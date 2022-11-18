@@ -2,8 +2,10 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "ES6",
+    "experimentalDecorators": true,
     "sourceMap": false,
     "esModuleInterop": true,
+    "strictNullChecks": false,
     "declaration": true,
     "rootDir": "src",
     "outDir": "dist",
