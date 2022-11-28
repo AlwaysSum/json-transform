@@ -1,20 +1,24 @@
-import { JsonDecorator } from "./json-decorator";
+import { isConstructor } from "./methods";
+import {
+  JsonDecorator,
+  JsonTransformEventDecorator,
+  TransformObject,
+  TransformEvent,
+  TransformParseObject,
+  TransformParseFunc,
+} from "./types";
 
 /**
- * Conversion method
+ * 提供给外部的转换方法
+ * @param data
+ * @param transform
+ * @returns
  */
-type Constructor = { new (...args: any[]): void };
-export type TransformParseObject =
-  | {
-      [key: string]: TransformParseObject | TransformObject;
-    }
-  | Function
-  | Constructor;
-
 export function JSONParse(data: string, transform: TransformParseObject) {
   if (!data) return data;
   if (transform) {
     const newData = transformJsonParse(data, transform);
+    // console.log('@转换结果:', newData)
     return newData;
   }
   return JSON.parse(data);
@@ -26,38 +30,81 @@ export function JSONParse(data: string, transform: TransformParseObject) {
  * @param transMap
  * @returns
  */
-function transformJsonParse(data: string, clazz: TransformParseObject | any) {
+function transformJsonParse(data: string, clazz: TransformParseObject | TransformParseFunc): any {
   let transMap = {};
-  if (typeof clazz === "function" && clazz.name === Function.name) {
-    clazz = clazz() ?? {};
-  }
-  if (typeof clazz === "function") {
-    console.log('====>',clazz)
-    const info = new clazz();
-    transMap = info.constructor?.[JsonDecorator] ?? {};
-  } else if (typeof clazz === "object") {
-    transMap = clazz;
+  let transformParse: TransformParseObject;
+  let event: TransformEvent;
+  // 通过方法转换
+  if (typeof clazz === "function" && !isConstructor(clazz)) {
+    const funcRes = (clazz as TransformParseFunc)(data) ?? {
+      parse: {},
+    };
+    transformParse = funcRes.parse;
+    event = funcRes.event;
   } else {
-    throw new Error(`Json转换异常:不存在映射类型:${clazz}`);
+    // 通过类型转换
+    transformParse = clazz as TransformParseObject;
   }
-  return JSON.parse(data, jsonParseFun(transMap));
+
+  if (typeof transformParse === "function") {
+    const info = new transformParse();
+    transMap = info.constructor?.[JsonDecorator] ?? {};
+    event = info.constructor?.[JsonTransformEventDecorator];
+  } else if (typeof transformParse === "object") {
+    transMap = transformParse;
+  } else {
+    throw new Error(`Json转换异常:不存在映射类型:${transformParse}`);
+  }
+
+  // 转换方法
+  const transfromDataFunc = function (data: string, trans: { [key: string]: TransformObject }) {
+    // 开始转换
+    let parseData = JSON.parse(data, jsonParseFun(trans));
+    // 转换后处理
+    if (event?.after) {
+      if (parseData instanceof Array) {
+        parseData = parseData.map((item) => event?.after(item, transformParse, data));
+      } else {
+        parseData = event?.after(parseData, transformParse, data);
+      }
+    }
+    return parseData;
+  };
+
+  //转换前处理
+  if (event?.beforeParse) {
+    //只处理对象
+    if (data.startsWith("{")) {
+      const transData = JSON.parse(data);
+      const newTransformParse = event?.beforeParse(transData, transformParse, data);
+      if (newTransformParse != transformParse) {
+        //走新的转换方法
+        return transformJsonParse(data, transformParse);
+      }
+    } else if (data.startsWith("[")) {
+      const transArray = JSON.parse(data);
+      return transArray.map((it: any) => {
+        const itJson = JSON.stringify(it);
+        const newTransformParse = event?.beforeParse(it, transformParse, itJson);
+        if (newTransformParse != transformParse) {
+          //新的转换方法
+          return transformJsonParse(itJson, newTransformParse);
+        } else {
+          return transfromDataFunc(itJson, transMap);
+        }
+      });
+    }
+  }
+
+  return transfromDataFunc(data, transMap);
 }
 
-/**
- * Conversion class
- */
-export type TransformObject =
-  | {
-      key: string;
-      type: Constructor;
-    }
-  | string;
 /**
  * Excute JSON Conversion method
  * @param trans
  * @returns
  */
-function jsonParseFun(trans: { [key: string]: TransformObject | string | Function }) {
+function jsonParseFun(trans: { [key: string]: TransformObject }) {
   const obj = new Map<any, string[]>();
   return function (this: any, key: string, value: any) {
     if (obj.has(value)) {
@@ -75,13 +122,10 @@ function jsonParseFun(trans: { [key: string]: TransformObject | string | Functio
       /**
        * Convert objects
        */
-      let transObj = trans[key];
+      const transObj = trans[key];
       let newValue = value; //转换后的值
       let newKey = key; // 转换后的key
 
-      if (typeof transObj === "function" && transObj.name === Function.name) {
-        transObj = transObj(); //通过方法获取转换对象
-      }
       /**
        * Convert the key directly
        */
@@ -95,10 +139,12 @@ function jsonParseFun(trans: { [key: string]: TransformObject | string | Functio
         /**
          * Convert through objects
          */
-      } else if (typeof transObj === "object" && transObj.key) {
-        newKey = transObj.key;
-        if (transObj.type) {
-          newValue = transformJsonParse(JSON.stringify(value), transObj.type);
+      } else if (typeof transObj === "object") {
+        if (transObj.key) {
+          newKey = transObj.key;
+        }
+        if (transObj.transform) {
+          newValue = transformJsonParse(JSON.stringify(value), transObj.transform);
         } else {
           newValue = value;
         }

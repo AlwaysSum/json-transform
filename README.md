@@ -71,6 +71,39 @@ const data = "{page:1,total_page:100,contents:<person的对象json字符串>}";
 JSONParse(data, { contents: Person });
 ```
 
+### 转换监听
+
+> 工具提供了一个 class 注解，通过该注解，可以处理转换前的数据类型 和转换后的数据。
+
+#### 示例一：
+
+> 通过，定义全局的转换方法，配合`class-transformer`实现请求后直接将 plain object 转换为 class object 。
+
+```ts
+/**
+ * 一些普通的转换为Class的方法
+ * Some common ways to convert to Class
+ * @returns
+ */
+export function CommonJSONClass() {
+  return JSONClass({
+    after: function (result: BlockResInfo, parse: TransformParseObject, json: string) {
+      if (typeof parse === "function") {
+        return plainToInstance(parse, result);
+      } else {
+        return result;
+      }
+    },
+  });
+}
+
+/**
+ * 使用注解
+ */
+@CommonJSONClass()
+export class YouerRespose {}
+```
+
 ### 和 Axios 框架配合使用
 
 1、步骤一:扩展 Axios 的配置参数
