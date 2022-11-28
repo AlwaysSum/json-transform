@@ -1,10 +1,19 @@
 {
   "name": "json-transform-utils",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "repository": "https://github.com/AlwaysSum/json-transform.git",
   "author": "Ma GuangCan<184425506@qq.com>",
   "description": "A tool for converting json's field names in typescript or javascript! Support multiple individual names! 一个用于转换json字段名的ts/js工具，支持多个别名",
   "license": "MIT",
+  "keywords": [
+    "json",
+    "fastjson",
+    "json-typescript",
+    "json-transform",
+    "gson",
+    "tson",
+    "json-transform-utils"
+  ],
   "scripts": {
     "test": "eslint . --fix&&jest",
     "prepublishOnly": "npm run test&&npm run build",
